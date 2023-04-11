@@ -1,5 +1,6 @@
 package com.foxyura.endless.tz
 
+import android.annotation.SuppressLint
 import android.content.ContentValues.TAG
 import android.content.Context
 import android.graphics.Bitmap
@@ -10,9 +11,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.CookieSyncManager
+
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -32,29 +34,64 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.google.android.gms.tasks.OnCompleteListener
 import com.google.firebase.ktx.Firebase
-import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.remoteconfig.ConfigUpdate
 import com.google.firebase.remoteconfig.ConfigUpdateListener
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
 import com.google.firebase.remoteconfig.ktx.remoteConfig
-import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
 import kotlinx.coroutines.delay
 import java.util.*
 
 
-class MainActivity : ComponentActivity() {
-    val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
-    var backEnabled = mutableStateOf(false) // false - начальная страница, true - другие страницы.
-    override fun onBackPressed() {
-        if (backEnabled.value == true) {
-            super.onBackPressed()
+class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(false) // false - начальная страница, true - другие страницы.
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState)
+        val sharedPreference = SharedPreference(this)
+        setContent { Navigation(sharedPreference) }
+    }
+    @Composable fun Navigation(sharedPreference: SharedPreference) { val navController = rememberNavController()
+        NavHost(navController = navController, startDestination = "splash_screen") {
+            composable("splash_screen") { SplashScreen(navController = navController,sharedPreference) } //Логотип
+            composable("web") { ScreenWeb(sharedPreference.getValueString("url").toString()) } //Веб-ресурс
+            composable("noInternet") { ScreenNotInternet() } //Нет интернета
+            composable("zaglushka") { ScreenZaglushka() } //Заглушка при отсутствии ссылки && эмулятор
+            composable("update") {val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
+                val navigation = if (remoteConfig.getString("url") != ""&&!checkIsEmu()) {
+                    sharedPreference.save("url", remoteConfig.getString("url")) //Сохранение ссылки
+                    "web" } else "zaglushka"
+                LaunchedEffect(key1 = true) { navController.navigate(navigation) }
+            } // Для обновления, или получения ссылки на веб- ресурс. Либо заглушка.
         }
-    } //Не даёт выйти из приложения, находясь на начальной странице.
-
-    @Composable fun VebContent(MyURL: String) {
+    }
+    fun logica(sharedPreference: SharedPreference):String{ val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
+        if (sharedPreference.getValueString("url") != null) { /*Есть ссылка на устройстве?*/
+            if (checkForInternet(this)) return "web" /*Интернет есть -> Открытие Веб- ресурса */ else return "noInternet"   /*Нет интернета*/
+        } else {
+            var errorUpdate = false
+            remoteConfig.fetchAndActivate().addOnCompleteListener(this) { task -> if (task.isSuccessful) { Log.d(TAG, "Обновлены параметры конфигурации: ${task.result}") } } // Обновление
+            remoteConfig.addOnConfigUpdateListener(object : ConfigUpdateListener {
+                override fun onUpdate(configUpdate: ConfigUpdate) { Log.d(TAG, "Обновленные ключи: " + configUpdate.updatedKeys); }
+                override fun onError(error: FirebaseRemoteConfigException) {
+                    Log.w(TAG, "Ошибка обновления конфигурации с кодом: " + error.code, error)
+                    errorUpdate = true
+                }
+            }) // Обновление ключей
+            return if (errorUpdate) "update" else {
+                Log.d(TAG, "Не удалось получить новые параметры")
+                "noInternet"
+            } //Если не удалось обновить параметры
+        }
+    } // Часть логики. Остальная в Navigation  ->  composable("update")
+    @Composable fun SplashScreen(navController: NavController, sharedPreference: SharedPreference) { val navigation = logica(sharedPreference)
+        LaunchedEffect(key1 = true) { delay(3600L)
+            navController.navigate(navigation)
+        }
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text("Добро пожаловать")
+        }
+    } //Экран Логотипа
+    @SuppressLint("SetJavaScriptEnabled") @Composable fun ScreenWeb(MyURL: String) {
+        CookieManager.getInstance().setAcceptCookie(true)
         var webView: WebView? = null
         BackHandler(enabled = backEnabled.value) { webView?.goBack() }
         AndroidView(factory = {
@@ -66,7 +103,6 @@ class MainActivity : ComponentActivity() {
                 webViewClient = object : WebViewClient() {
                     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                         backEnabled.value = view.canGoBack()
-                        CookieManager.getInstance().setAcceptCookie(true)
                     }
                 }
                 loadUrl(MyURL)
@@ -75,37 +111,13 @@ class MainActivity : ComponentActivity() {
             }
         }, update = { webView = it })
     } // Веб- ресурс
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        val sharedPreference = SharedPreference(this)
-        super.onCreate(savedInstanceState)
-        setContent { Navigation(sharedPreference) }
-
-        remoteConfig.fetchAndActivate().addOnCompleteListener(this) { task ->
-            if (task.isSuccessful) {
-                val updated = task.result
-                Log.d(TAG, "Обновлены параметры конфигурации: $updated")
-            }
-        } // Загрузка значений
-
-        remoteConfig.addOnConfigUpdateListener(object : ConfigUpdateListener {
-            override fun onUpdate(configUpdate: ConfigUpdate) {
-                Log.d(TAG, "Обновленные ключи: " + configUpdate.updatedKeys); }
-            override fun onError(error: FirebaseRemoteConfigException) {
-                Log.w(TAG, "Ошибка обновления конфигурации с кодом: " + error.code, error)
-            }
-        }) // Обновление конфигурации
-
-        remoteConfig.fetchAndActivate().addOnCompleteListener(this) { task ->
-            if (task.isSuccessful) {
-                val updated = task.result
-                Log.d(TAG, "Обновлены параметры конфигурации: $updated")
-            }
-        } // Загрузка значений
-    }
-
+    @Composable fun ScreenNotInternet() {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Нет доступа к интернету.")
+        }
+    } // Экран отсутствия интернета
     private fun checkIsEmu(): Boolean {
-        if (BuildConfig.DEBUG) return false // when developer use this build on emulator
+        if (BuildConfig.DEBUG) return false // когда разработчик использует эту сборку на эмуляторе
         val phoneModel = Build.MODEL
         val buildProduct = Build.PRODUCT
         val buildHardware = Build.HARDWARE
@@ -132,20 +144,31 @@ class MainActivity : ComponentActivity() {
         if (result) return true
         result = result or ("google_sdk" == buildProduct)
         return result
-    } // Условие для проверки эмулятора из ТЗ
-
-
-
-
-    @Composable
-    fun notInternet() {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Нет доступа к интернету.")
+    } // Проверка: Эмулятор?
+    fun checkForInternet(context: Context): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val network = connectivityManager.activeNetwork ?: return false
+            val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+            return when {
+                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
+                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
+                else -> false
+            }
+        } else {
+            @Suppress("DEPRECATION") val networkInfo = connectivityManager.activeNetworkInfo ?: return false
+            @Suppress("DEPRECATION") return networkInfo.isConnected
         }
-    }
-
-    @Composable
-    fun zaglushka() {
+    } //Проверка: Есть ли интернет?
+    fun chekUpdateURL(remoteConfig: FirebaseRemoteConfig) {
+        remoteConfig.fetchAndActivate().addOnCompleteListener(this) { task -> if (task.isSuccessful) { Log.d(TAG, "Обновлены параметры конфигурации: ${task.result}") } } // Обновление
+        remoteConfig.addOnConfigUpdateListener(object : ConfigUpdateListener {
+            override fun onUpdate(configUpdate: ConfigUpdate) { Log.d(TAG, "Обновленные ключи: " + configUpdate.updatedKeys); }
+            override fun onError(error: FirebaseRemoteConfigException) { Log.w(TAG, "Ошибка обновления конфигурации с кодом: " + error.code, error) }
+        }) // Обновление ключей
+    } //Получение новых параметров из сервера
+    override fun onBackPressed() { if (backEnabled.value == true) { super.onBackPressed() } } //Не даёт выйти из приложения, находясь на начальной странице.
+    @Composable fun ScreenZaglushka() {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
                 Box(Modifier.fillMaxWidth().padding(5.dp), contentAlignment = Alignment.Center){
@@ -184,114 +207,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    fun checkForInternet(context: Context): Boolean {
-
-        // register activity with the connectivity manager service
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        // if the android version is equal to M
-        // or greater we need to use the
-        // NetworkCapabilities to check what type of
-        // network has the internet connection
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-
-            // Returns a Network object corresponding to
-            // the currently active default data network.
-            val network = connectivityManager.activeNetwork ?: return false
-
-            // Representation of the capabilities of an active network.
-            val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
-
-            return when {
-                // Indicates this network uses a Wi-Fi transport,
-                // or WiFi has network connectivity
-                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
-
-                // Indicates this network uses a Cellular transport. or
-                // Cellular has network connectivity
-                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
-
-                // else return false
-                else -> false
-            }
-        } else {
-            // if the android version is below M
-            @Suppress("DEPRECATION") val networkInfo =
-                connectivityManager.activeNetworkInfo ?: return false
-            @Suppress("DEPRECATION")
-            return networkInfo.isConnected
-        }
-
-    }
-    @Composable
-    fun Navigation(sharedPreference: SharedPreference) {
-        val navController = rememberNavController()
-        NavHost(
-            navController = navController,
-            startDestination = "splash_screen"
-        ) {
-            composable("splash_screen") {
-                SplashScreen(navController = navController,sharedPreference)
-            }
-
-            // Main Screen
-            composable("main_screen") {
-                VebContent(sharedPreference.getValueString("url").toString())
-            }
-            composable("noInternet") {
-                notInternet()
-            }
-            composable("update") {
-                var navigation by remember { mutableStateOf("") }
-                if (remoteConfig.getString("url") != ""||!checkIsEmu()) { //Ссылка не пустая?||не Эмулятор?
-                    Log.d(TAG, "Ссылка не пустая")
-                    navigation = "main_screen"
-                    sharedPreference.save("url", remoteConfig.getString("url")) //Сохранение ссылки
-                } else {  //Заглушка! Сервис или игра!
-                    Log.d(TAG, "Ссылка пустая!!!")
-                    navigation = "zaglushka"
-                }
-                LaunchedEffect(key1 = true) {
-                    navController.navigate(navigation)
-                }
-            }
-            composable("zaglushka") {
-                zaglushka()
-            }
-        }
-    }
-
-    @Composable
-    fun SplashScreen(navController: NavController, sharedPreference: SharedPreference) {
-        var navigation by remember { mutableStateOf("") }
-        val configSettings = remoteConfigSettings { minimumFetchIntervalInSeconds = 1600 }  // Частота обновлений
-        remoteConfig.setConfigSettingsAsync(configSettings)
-
-        //remoteConfig.setDefaultsAsync(R.xml.remote_config_defaults) // значения по умолчанию
-
-        if (sharedPreference.getValueString("url") != null) { //Сохранена ли ссылка на устройстве?
-            Log.d(TAG, "Ссылка есть на устройстве")
-            if (checkForInternet(this)) { //Есть ли подключение к интернету?
-                Log.d(TAG, "Интернет есть")
-                navigation = "main_screen"
-            } else {
-                navigation = "noInternet"
-            }  //Нет интернета
-        } else {  //Не сохранена ссылка
-            navigation = "update"
-            Log.d(TAG, "Ссылки нет на устройстве")
-
-        }
-        LaunchedEffect(key1 = true) {
-            delay(3600L)
-            navController.navigate(navigation)
-        }
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Text("Добро пожаловать")
-        }
-    }
+    } // Заглушка
 }
 
 
