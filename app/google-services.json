@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "295008070260",
+    "project_id": "project-tz-86fb4",
+    "storage_bucket": "project-tz-86fb4.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295008070260:android:1d0e7d4baa11adb7c0bf21",
+        "android_client_info": {
+          "package_name": "com.foxyura.endless.tz"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "295008070260-smqlit0m4stvdc1jpanl06mpsgb5po1j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGe3SdZE4Wu7BTg0YwhAc8zYtBMwGkpzA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "295008070260-smqlit0m4stvdc1jpanl06mpsgb5po1j.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
