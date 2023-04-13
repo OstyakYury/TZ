@@ -1,13 +1,16 @@
 package win.app.vin.one.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
-import android.app.Activity
-import android.app.DownloadManager
+import android.app.*
+import android.app.PendingIntent.FLAG_IMMUTABLE
+import android.app.PendingIntent.FLAG_UPDATE_CURRENT
 import android.content.ContentValues.TAG
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -21,6 +24,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -29,7 +33,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.*
@@ -42,13 +45,13 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import com.google.accompanist.navigation.animation.AnimatedNavHost
 import com.google.accompanist.navigation.animation.composable
@@ -63,6 +66,11 @@ import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
 import com.google.firebase.remoteconfig.ktx.remoteConfig
 import kotlinx.coroutines.delay
 import win.app.vin.one.app.ui.theme.TZTheme
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
+import java.security.Provider
 import java.util.*
 import kotlin.system.exitProcess
 
@@ -100,13 +108,13 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
             composable("splash_screen") { SplashScreen(navController = navController,sharedPreference) } //Логотип
 
             composable("web") {ScreenWeb(sharedPreference.getValueString("url").toString())
-                FeatureThatRequiresCameraPermission()} //Веб-ресурс
+                } //Веб-ресурс
             composable("noInternet") { ScreenNotInternet() } //Нет интернета
-            composable(
-                "zaglushka",
+            composable("zaglushka") { ScreenZaglushka() } //Заглушка при отсутствии ссылки && эмулятор
+            composable("update") {
 
-                ) { ScreenZaglushka() } //Заглушка при отсутствии ссылки && эмулятор
-            composable("update") {val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
+
+                val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
                 val navigation = if (remoteConfig.getString("url") != ""&&!checkIsEmu()) {
                     sharedPreference.save("url", remoteConfig.getString("url")) //Сохранение ссылки
                     "web" } else "zaglushka"
@@ -114,6 +122,17 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
             } // Для обновления, или получения ссылки на веб- ресурс. Либо заглушка.
         }
     }
+    private fun requestPerms() {
+        val perm = arrayOf(
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            Manifest.permission.CAMERA,
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ActivityCompat.requestPermissions(this@MainActivity, perm, 123)
+        }
+    }
+
     fun logica(sharedPreference: SharedPreference):String{ val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
         if (sharedPreference.getValueString("url") != null) { /*Есть ссылка на устройстве?*/
             if (checkForInternet(this)) return "web" /*Интернет есть -> Открытие Веб- ресурса */ else return "noInternet"   /*Нет интернета*/
@@ -142,84 +161,27 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
 
         }
     } //Экран Логотипа
-    @OptIn(ExperimentalComposeUiApi::class)
-    @SuppressLint("SetJavaScriptEnabled") @Composable fun ScreenWeb(MyURL: String) {
-        val loaderDialogScreen = remember { mutableStateOf(false) }
-        CookieManager.getInstance().setAcceptCookie(true)
-        var webView: WebView? = null
+    @OptIn(ExperimentalComposeUiApi::class, ExperimentalPermissionsApi::class)
+    @SuppressLint("SetJavaScriptEnabled", "NewApi") @Composable fun ScreenWeb(MyURL: String) {
 
+        val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
+        val storagePermissionState = rememberPermissionState(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
 
-        BackHandler(enabled = backEnabled.value) { webView?.goBack() }
-
-        if (loaderDialogScreen.value) {
-
-            // Dialog function
-            Dialog(
-                onDismissRequest = {
-                    loaderDialogScreen.value = false
-                },
-                properties = DialogProperties(
-                    usePlatformDefaultWidth = false // experimental
-                )
-            ) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-
-
-
-                        Image(
-                            painter = painterResource(id = R.drawable.logo),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .height(200.dp)
-                                .fillMaxWidth(),
-
-                            )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-                        //.........................Text: title
-                        Text(
-                            text = "Loading...",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .padding(top = 20.dp)
-                                .fillMaxWidth(),
-                            letterSpacing = 2.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        //.........................Text : description
-                        Text(
-                            text = "Please wait",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .padding(top = 10.dp, start = 25.dp, end = 25.dp)
-                                .fillMaxWidth(),
-                            letterSpacing = 3.sp,
-                        )
-                        //.........................Spacer
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                    }
-
-                }
-            }
-
+        LaunchedEffect(key1 = true) {
+            if (storagePermissionState.status.isGranted) {
+            } else {requestPerms() }
+            if (cameraPermissionState.status.isGranted) {
+            } else { requestPerms() }
         }
 
 
 
+        val loaderDialogScreen = remember { mutableStateOf(false) }
+        CookieManager.getInstance().setAcceptCookie(true)
+        var webView: WebView? = null
 
+        BackHandler(enabled = backEnabled.value) { webView?.goBack() }
         AndroidView(factory = {
-
-
             WebView(it).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -229,6 +191,15 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
 
                 settings.useWideViewPort = true
                 settings.loadWithOverviewMode = true
+
+
+                settings.databaseEnabled = true
+                settings.useWideViewPort = true
+                settings.javaScriptCanOpenWindowsAutomatically = true
+                settings.mediaPlaybackRequiresUserGesture = true
+                settings.pluginState = WebSettings.PluginState.ON
+
+                settings.allowContentAccess = true
 
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -247,8 +218,26 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
 
                 }
                 webChromeClient = object : WebChromeClient() {
+                    override fun onPermissionRequestCanceled(request: PermissionRequest?) {
+                        super.onPermissionRequestCanceled   (request)
+                    }
+
+
+
                     override fun onPermissionRequest(request: PermissionRequest) {
+
+
+//                        request.resources.forEach {r ->
+//                            if ( r == PermissionRequest.RESOURCE_VIDEO_CAPTURE ){
+//                                if (cameraPermissionState.status.isGranted) {
+//                                } else { cameraPermissionState.launchPermissionRequest() }
+//                            }
+//                        }
+
+
+
                         request.grant(request.resources)
+
                     }
                     override fun onShowFileChooser(
                         webView: WebView,
@@ -260,29 +249,29 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
                         return true
                     }
                 }
-//                webView?.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
-//                    val request = DownloadManager.Request(
-//                        Uri.parse(url)
-//                    )
-//
-//                    request.allowScanningByMediaScanner()
-//                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-//                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "download")
-//                    val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-//                    dm.enqueue(request)
-//                })
-                settings.allowFileAccess = true
-                settings.allowContentAccess = true
-                setDownloadListener { url, _, _, _, _ ->
-                    Log.d(TAG, "${url}")
+
+                setDownloadListener  { url, _, _, _, _ ->
+                    Log.d(TAG, "Ссылка : ${url}")
+                    if (url.startsWith("data:")) {  //when url is base64 encoded data
+//                        downloadTest(url)
+
+                        createAndSaveFileFromBase64Url(url)
+//                        val decodedByte = Base64.getDecoder().decode(url)
+//                        val bitmap = BitmapFactory.decodeByteArray(decodedByte, 0,decodedByte.size)
+//                        val encodedUrl = Base64.getUrlEncoder().encodeToString(url.toByteArray())
+//                        Log.d(TAG, "Ссылка кодированая : ${decodedByte}")
+                        return@setDownloadListener
+                    }
                     url?.let {
                         try {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse(it)
-                                }
-                            )
+                            download(url)
+//                            context.startActivity(
+//                                Intent(Intent.ACTION_VIEW).apply {
+//                                    data = Uri.parse(it)
+//                                }
+//                            )
                         } catch (e: Exception) {
+                            val imageRaw: ByteArray? = null
                             Toast.makeText(context, "Error opening link", Toast.LENGTH_LONG)
                                 .show()
                         }
@@ -291,11 +280,157 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
                 loadUrl(MyURL)
             }
         }, update = { webView = it })
-
     } // Веб- ресурс
 
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun downloadTest(imageUrl:String){
+
+        val path: File = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val filetype = imageUrl.substring(imageUrl.indexOf("/") + 1, imageUrl.indexOf(";"))
+        val filename = System.currentTimeMillis().toString() + "." + filetype
 
 
+        val file = File(path, filename)
+        val base64EncodedString = imageUrl.substring(imageUrl.indexOf(",") + 1)
+        val imageByteArray = Base64.getDecoder().decode(base64EncodedString)
+
+
+        val os: OutputStream = FileOutputStream(file)
+        os.write(imageByteArray)
+        os.close()
+
+
+
+        //Сообщите сканеру мультимедиа о новом файле, чтобы он был немедленно доступен пользователю.
+        MediaScannerConnection.scanFile(this, arrayOf<String>(file.toString()), null,
+            object : MediaScannerConnection.OnScanCompletedListener {
+                override fun onScanCompleted(path: String, uri: Uri) {
+                    Log.i("ExternalStorage", "Scanned $path:")
+                    Log.i("ExternalStorage", "-> uri=$uri")
+
+                    // Initialize download request
+                    val request = DownloadManager.Request(Uri.parse(path))
+                    // Установите описание запроса на загрузку
+                    request.setDescription("Downloading requested image....")
+                    // Разрешить сканирование
+                    request.allowScanningByMediaScanner()
+                    // Настройка уведомления о запросе загрузки
+                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    // Угадайте имя файла
+                    val fileName = URLUtil.guessFileName(imageUrl, null, null)
+                    // Установите целевое хранилище для загруженного файла
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+
+                    // Задать заголовок запроса
+                    request.setTitle("Image Download : $fileName")
+                    // Получите услугу загрузки системы
+                    val dManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    // Наконец, запросите загрузку в службу загрузки системы
+                    dManager.enqueue(request)
+                }
+            })
+    }
+
+
+
+    @SuppressLint("UnspecifiedImmutableFlag")
+    fun createAndSaveFileFromBase64Url(url: String): String {
+
+
+
+        val path: File = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val filetype = url.substring(url.indexOf("/") + 1, url.indexOf(";"))
+        val filename = System.currentTimeMillis().toString() + "." + filetype
+        val file = File(path, filename)
+        try {
+            if (!path.exists()) path.mkdirs()
+            if (!file.exists()) file.createNewFile()
+            val base64EncodedString = url.substring(url.indexOf(",") + 1)
+            val decodedBytes: ByteArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Base64.getDecoder().decode(base64EncodedString)
+            } else {
+                TODO("VERSION.SDK_INT < O")
+            }
+            val os: OutputStream = FileOutputStream(file)
+            os.write(decodedBytes)
+            os.close()
+
+            val intent = Intent()
+            intent.action = Intent.ACTION_VIEW
+            val mimetype = url.substring(url.indexOf(":") + 1, url.indexOf("/"))
+
+            //Сообщите сканеру мультимедиа о новом файле, чтобы он был немедленно доступен пользователю.
+            MediaScannerConnection.scanFile(this, arrayOf<String>(file.toString()), null,
+                object : MediaScannerConnection.OnScanCompletedListener {
+                    override fun onScanCompleted(path: String, uri: Uri) {
+                        Log.i("ExternalStorage", "Scanned $path:")
+                        Log.i("ExternalStorage", "-> uri=$uri")
+                        Log.i("ExternalStorage", "-> intent=${intent.setDataAndType(uri,"$mimetype")}")
+                        intent.setData(uri)
+                    }
+                })
+            intent.setType("$mimetype/*")
+
+
+//            intent.setDataAndType(FileProvider.getUriForFile(this@MainActivity,   "provider", file), "$mimetype/*")
+
+            //Set notification after download complete and add "click to view" action to that
+            val flags = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> FLAG_UPDATE_CURRENT or FLAG_IMMUTABLE
+                else -> FLAG_UPDATE_CURRENT
+            }
+            val mNotificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val mChannel = NotificationChannel("my_channel_01", "Chanel", NotificationManager.IMPORTANCE_LOW)
+            mChannel.description = "Descript chanel"
+            mChannel.enableLights(true)
+            mChannel.enableVibration(false)
+            mChannel.vibrationPattern = longArrayOf(100, 200, 300, 400, 500, 400, 300, 200, 400)
+            mNotificationManager.createNotificationChannel(mChannel)
+
+            val pIntent = PendingIntent.getActivity(this@MainActivity, 0, intent, flags)
+            val notification: Notification =  NotificationCompat.Builder(applicationContext,
+                applicationContext.getString(R.string.app_name))
+                .setSmallIcon(R.drawable.logo)
+                .setContentText("File download")
+                .setContentTitle(filename)
+                .setContentIntent(pIntent)
+                .setChannelId("my_channel_01")
+                .build()
+            notification.flags = notification.flags or Notification.FLAG_AUTO_CANCEL
+
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(85851, notification)
+
+        } catch (e: IOException) {
+            Log.w("ExternalStorage", "Error writing file", e)
+            Toast.makeText(applicationContext, "Error download", Toast.LENGTH_LONG).show()
+        }
+        return file.toString()
+    }
+
+     fun download(imageUrl:String){
+        // Initialize download request
+        val request = DownloadManager.Request(Uri.parse(imageUrl))
+         // Установите описание запроса на загрузку
+        request.setDescription("Downloading requested image....")
+        // Разрешить сканирование
+        request.allowScanningByMediaScanner()
+        // Настройка уведомления о запросе загрузки
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        // Угадайте имя файла
+        val fileName = URLUtil.guessFileName(imageUrl, null, null)
+        // Установите целевое хранилище для загруженного файла
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+
+        // Задать заголовок запроса
+        request.setTitle("Image Download : $fileName")
+        // Получите услугу загрузки системы
+        val dManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        // Наконец, запросите загрузку в службу загрузки системы
+        dManager.enqueue(request)
+    }
+
+    // Выбор файлов
     private fun openImageChooserActivity() {
         val i = Intent(Intent.ACTION_GET_CONTENT)
         i.addCategory(Intent.CATEGORY_OPENABLE)
@@ -339,6 +474,7 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
     companion object {
         private val FILE_CHOOSER_RESULT_CODE = 10000
     }
+    //------------
     @Composable fun ScreenNotInternet() {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(textAlign = TextAlign.Center, text = "A network connection is\nrequired to continue.")
@@ -522,57 +658,8 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
     private fun FeatureThatRequiresCameraPermission() {
 
         // Camera permission state
-        val cameraPermissionState = rememberPermissionState(
-            android.Manifest.permission.CAMERA
-        )
-        val storagePermissionState = rememberPermissionState(
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-        )
 
-        if (storagePermissionState.status.isGranted) {
-            Text("Camera permission Granted")
-        } else {
-            Column {
-                val textToShow = if (storagePermissionState.status.shouldShowRationale) {
-                    // If the user has denied the permission but the rationale can be shown,
-                    // then gently explain why the app requires this permission
-                    "The camera is important for this app. Please grant the permission."
-                } else {
-                    // If it's the first time the user lands on this feature, or the user
-                    // doesn't want to be asked again for this permission, explain that the
-                    // permission is required
-                    "Camera permission required for this feature to be available. " +
-                            "Please grant the permission"
-                }
-                Text(textToShow)
-                Button(onClick = { storagePermissionState.launchPermissionRequest() }) {
-                    Text("Request permission")
-                }
-            }
-        }
-
-        if (cameraPermissionState.status.isGranted) {
-            Text("Camera permission Granted")
-        } else {
-            Column {
-                val textToShow = if (cameraPermissionState.status.shouldShowRationale) {
-                    // If the user has denied the permission but the rationale can be shown,
-                    // then gently explain why the app requires this permission
-                    "The camera is important for this app. Please grant the permission."
-                } else {
-                    // If it's the first time the user lands on this feature, or the user
-                    // doesn't want to be asked again for this permission, explain that the
-                    // permission is required
-                    "Camera permission required for this feature to be available. " +
-                            "Please grant the permission"
-                }
-                Text(textToShow)
-                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
-                    Text("Request permission")
-                }
-            }
-        }
-    }
+    } //Запрос разрешений
 }
 
 
