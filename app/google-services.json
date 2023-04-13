@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "295008070260",
-    "project_id": "project-tz-86fb4",
-    "storage_bucket": "project-tz-86fb4.appspot.com"
+    "project_number": "793274174738",
+    "project_id": "wava-ff1a4",
+    "storage_bucket": "wava-ff1a4.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:295008070260:android:1d0e7d4baa11adb7c0bf21",
+        "mobilesdk_app_id": "1:793274174738:android:00415d5484096a622b37cb",
         "android_client_info": {
-          "package_name": "com.foxyura.endless.tz"
+          "package_name": "win.app.vin.one.app"
         }
       },
       "oauth_client": [
         {
-          "client_id": "295008070260-smqlit0m4stvdc1jpanl06mpsgb5po1j.apps.googleusercontent.com",
+          "client_id": "793274174738-3plv72huvl0hcf9hvn04odbl4jupsu7i.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBGe3SdZE4Wu7BTg0YwhAc8zYtBMwGkpzA"
+          "current_key": "AIzaSyDczIR7nVQcWRqVpKmKAKBTqTQY3ZWSrBU"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "295008070260-smqlit0m4stvdc1jpanl06mpsgb5po1j.apps.googleusercontent.com",
+              "client_id": "793274174738-3plv72huvl0hcf9hvn04odbl4jupsu7i.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest package="win.app.vin.one.app"
+        xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
     <!-- Добавление зависимостей из ТЗ -->
     <uses-permission android:name="android.permission.INTERNET"/> <!-- Интернет -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/> <!-- Доступ к внешнему хранилищу -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage"/> <!-- Доступ к внешнему хранилищу -->
     <uses-permission android:name="android.permission.CAMERA" />  <!-- Доступ к камере -->
     <!-- Конец добавления зависимостей из ТЗ -->
     <application
