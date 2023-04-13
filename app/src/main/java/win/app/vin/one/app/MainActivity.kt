@@ -135,7 +135,11 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
 
     fun logica(sharedPreference: SharedPreference):String{ val remoteConfig: FirebaseRemoteConfig = Firebase.remoteConfig  // Получение удаленного экземпляра конфигурации
         if (sharedPreference.getValueString("url") != null) { /*Есть ссылка на устройстве?*/
-            if (checkForInternet(this)) return "web" /*Интернет есть -> Открытие Веб- ресурса */ else return "noInternet"   /*Нет интернета*/
+            if (checkForInternet(this)) {Log.w(TAG, "Есть интернет")
+                return "web"
+            } /*Интернет есть -> Открытие Веб- ресурса */ else {Log.w(TAG, "Нет интернета")
+                return "noInternet"
+            }   /*Нет интернета*/
         } else {
             var errorUpdate = true
             remoteConfig.fetchAndActivate().addOnCompleteListener(this) { task -> if (task.isSuccessful) { Log.d(TAG, "Обновлены параметры конфигурации: ${task.result}") } } // Обновление
@@ -163,19 +167,14 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
     } //Экран Логотипа
     @OptIn(ExperimentalComposeUiApi::class, ExperimentalPermissionsApi::class)
     @SuppressLint("SetJavaScriptEnabled", "NewApi") @Composable fun ScreenWeb(MyURL: String) {
-
         val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
         val storagePermissionState = rememberPermissionState(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-
         LaunchedEffect(key1 = true) {
             if (storagePermissionState.status.isGranted) {
             } else {requestPerms() }
             if (cameraPermissionState.status.isGranted) {
             } else { requestPerms() }
         }
-
-
-
         val loaderDialogScreen = remember { mutableStateOf(false) }
         CookieManager.getInstance().setAcceptCookie(true)
         var webView: WebView? = null
@@ -218,32 +217,10 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
 
                 }
                 webChromeClient = object : WebChromeClient() {
-                    override fun onPermissionRequestCanceled(request: PermissionRequest?) {
-                        super.onPermissionRequestCanceled   (request)
-                    }
+                    override fun onPermissionRequestCanceled(request: PermissionRequest?) { super.onPermissionRequestCanceled(request) }
 
-
-
-                    override fun onPermissionRequest(request: PermissionRequest) {
-
-
-//                        request.resources.forEach {r ->
-//                            if ( r == PermissionRequest.RESOURCE_VIDEO_CAPTURE ){
-//                                if (cameraPermissionState.status.isGranted) {
-//                                } else { cameraPermissionState.launchPermissionRequest() }
-//                            }
-//                        }
-
-
-
-                        request.grant(request.resources)
-
-                    }
-                    override fun onShowFileChooser(
-                        webView: WebView,
-                        filePathCallback: ValueCallback<Array<Uri>>,
-                        fileChooserParams: WebChromeClient.FileChooserParams
-                    ): Boolean {
+                    override fun onPermissionRequest(request: PermissionRequest) { request.grant(request.resources) }
+                    override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri>>, fileChooserParams: WebChromeClient.FileChooserParams): Boolean {
                         uploadMessageAboveL = filePathCallback
                         openImageChooserActivity()
                         return true
@@ -253,25 +230,13 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
                 setDownloadListener  { url, _, _, _, _ ->
                     Log.d(TAG, "Ссылка : ${url}")
                     if (url.startsWith("data:")) {  //when url is base64 encoded data
-//                        downloadTest(url)
-
                         createAndSaveFileFromBase64Url(url)
-//                        val decodedByte = Base64.getDecoder().decode(url)
-//                        val bitmap = BitmapFactory.decodeByteArray(decodedByte, 0,decodedByte.size)
-//                        val encodedUrl = Base64.getUrlEncoder().encodeToString(url.toByteArray())
-//                        Log.d(TAG, "Ссылка кодированая : ${decodedByte}")
                         return@setDownloadListener
                     }
                     url?.let {
                         try {
                             download(url)
-//                            context.startActivity(
-//                                Intent(Intent.ACTION_VIEW).apply {
-//                                    data = Uri.parse(it)
-//                                }
-//                            )
                         } catch (e: Exception) {
-                            val imageRaw: ByteArray? = null
                             Toast.makeText(context, "Error opening link", Toast.LENGTH_LONG)
                                 .show()
                         }
@@ -281,58 +246,7 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
             }
         }, update = { webView = it })
     } // Веб- ресурс
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun downloadTest(imageUrl:String){
-
-        val path: File = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val filetype = imageUrl.substring(imageUrl.indexOf("/") + 1, imageUrl.indexOf(";"))
-        val filename = System.currentTimeMillis().toString() + "." + filetype
-
-
-        val file = File(path, filename)
-        val base64EncodedString = imageUrl.substring(imageUrl.indexOf(",") + 1)
-        val imageByteArray = Base64.getDecoder().decode(base64EncodedString)
-
-
-        val os: OutputStream = FileOutputStream(file)
-        os.write(imageByteArray)
-        os.close()
-
-
-
-        //Сообщите сканеру мультимедиа о новом файле, чтобы он был немедленно доступен пользователю.
-        MediaScannerConnection.scanFile(this, arrayOf<String>(file.toString()), null,
-            object : MediaScannerConnection.OnScanCompletedListener {
-                override fun onScanCompleted(path: String, uri: Uri) {
-                    Log.i("ExternalStorage", "Scanned $path:")
-                    Log.i("ExternalStorage", "-> uri=$uri")
-
-                    // Initialize download request
-                    val request = DownloadManager.Request(Uri.parse(path))
-                    // Установите описание запроса на загрузку
-                    request.setDescription("Downloading requested image....")
-                    // Разрешить сканирование
-                    request.allowScanningByMediaScanner()
-                    // Настройка уведомления о запросе загрузки
-                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    // Угадайте имя файла
-                    val fileName = URLUtil.guessFileName(imageUrl, null, null)
-                    // Установите целевое хранилище для загруженного файла
-                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-
-                    // Задать заголовок запроса
-                    request.setTitle("Image Download : $fileName")
-                    // Получите услугу загрузки системы
-                    val dManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                    // Наконец, запросите загрузку в службу загрузки системы
-                    dManager.enqueue(request)
-                }
-            })
-    }
-
-
-
+    //Скачивание файлов и base64Url
     @SuppressLint("UnspecifiedImmutableFlag")
     fun createAndSaveFileFromBase64Url(url: String): String {
 
@@ -407,8 +321,7 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
         }
         return file.toString()
     }
-
-     fun download(imageUrl:String){
+    fun download(imageUrl:String){
         // Initialize download request
         val request = DownloadManager.Request(Uri.parse(imageUrl))
          // Установите описание запроса на загрузку
@@ -429,7 +342,6 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
         // Наконец, запросите загрузку в службу загрузки системы
         dManager.enqueue(request)
     }
-
     // Выбор файлов
     private fun openImageChooserActivity() {
         val i = Intent(Intent.ACTION_GET_CONTENT)
@@ -439,18 +351,18 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
-            if (null == uploadMessage && null == uploadMessageAboveL) return
-            val result = if (data == null || resultCode != Activity.RESULT_OK) null else data.data
-            if (uploadMessageAboveL != null) {
-                onActivityResultAboveL(requestCode, resultCode, data)
-            } else if (uploadMessage != null) {
-                uploadMessage!!.onReceiveValue(result)
-                uploadMessage = null
-            }
-        }
+//        super.onActivityResult(requestCode, resultCode, data)
+//        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
+//            if (null == uploadMessage && null == uploadMessageAboveL) return
+//            val result = if (data == null || resultCode != Activity.RESULT_OK) null else data.data
+//            if (uploadMessageAboveL != null) {
+//                onActivityResultAboveL(requestCode, resultCode, data)
+//            } else if (uploadMessage != null) {
+//                uploadMessage!!.onReceiveValue(result)
+//                uploadMessage = null
+//            }
+//        }
     }
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private fun onActivityResultAboveL(requestCode: Int, resultCode: Int, intent: Intent?) {
         if (requestCode != FILE_CHOOSER_RESULT_CODE || uploadMessageAboveL == null)
             return
@@ -471,9 +383,7 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
         uploadMessageAboveL!!.onReceiveValue(results)
         uploadMessageAboveL = null
     }
-    companion object {
-        private val FILE_CHOOSER_RESULT_CODE = 10000
-    }
+    companion object { private val FILE_CHOOSER_RESULT_CODE = 10000 }
     //------------
     @Composable fun ScreenNotInternet() {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -652,14 +562,6 @@ class MainActivity : ComponentActivity() { var backEnabled = mutableStateOf(fals
         }
         screanColumnInfo(list,mapImage)
     } // Заглушка
-
-    @OptIn(ExperimentalPermissionsApi::class)
-    @Composable
-    private fun FeatureThatRequiresCameraPermission() {
-
-        // Camera permission state
-
-    } //Запрос разрешений
 }
 
 
